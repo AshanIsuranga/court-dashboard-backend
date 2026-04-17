@@ -49,3 +49,92 @@ exports.getCenterDetails = async (req, res) => {
         return res.status(500).json({ error: "An error occurred while fetching recived complaind" });
     }
 }
+
+
+exports.getPendingConnectionDetailsEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl)
+  try {
+      const courtId = req.user.courtId;
+      const {page, limit, searchText} = await CaseValidation.getAllConnectionDetailsSchema.validateAsync(req.query);
+      const {items, total} = await CasesDAO.getPendingConnectionDetailsDao(page, limit, searchText, courtId)
+
+      console.log('items', items)
+
+      res.status(200).json({ message: "Data found!", status: true, items, total });
+  } catch (error) {
+      if (error.isJoi) {
+          return res.status(400).json({ error: error.details[0].message });
+      }
+
+      console.error("Error fetching recived complaind:", error);
+      return res.status(500).json({ error: "An error occurred while fetching recived complaind" });
+  }
+}
+
+
+exports.createConnectionEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl);
+
+  try {
+    const {  partyId, userId } = await CaseValidation.getConnectionSchema.validateAsync(req.body);
+
+    const result = await CasesDAO.createConnectionDao(partyId, userId);
+
+    console.log('result', result)
+
+    if (result.length === 0) {
+      return res.json({ message: "connection creation failed!", status: false });
+   }
+
+    return res.status(200).json({
+      message: "Connection created!",
+      status: true,
+      data: result
+    });
+
+  } catch (error) {
+    console.error("Error creating connection:", error);
+    return res.status(500).json({
+      error: "An error occurred while creating connection"
+    });
+  }
+};
+
+
+exports.createConnectioOrgnEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl);
+
+  try {
+    const {  partyId, userId, orgId, orgUserId } = await CaseValidation.getConnectionOrgSchema.validateAsync(req.body);
+
+    const result = await CasesDAO.createConnectionOrgDao(orgUserId, userId);
+
+    console.log('result', result)
+
+    if (result.length === 0) {
+      return res.json({ message: "connection creation failed!", status: false });
+   }
+
+   const resul2 = await CasesDAO.updateConnectionStatusOrgDao(partyId);
+
+   if (resul2.length === 0) {
+    return res.json({ message: "connection creation failed!", status: false });
+ }
+
+
+    return res.status(200).json({
+      message: "Connection created!",
+      status: true,
+      data: result
+    });
+
+  } catch (error) {
+    console.error("Error creating connection:", error);
+    return res.status(500).json({
+      error: "An error occurred while creating connection"
+    });
+  }
+};

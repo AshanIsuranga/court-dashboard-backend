@@ -111,6 +111,7 @@ exports.getCasePartiesDao = async (caseId) => {
     cp.partystatus,
     cp.partynic,
     cp.partyname,
+    cp.linkeduserid,
     cp.ispolicestation,
     cp.lawyerstatus,
     cp.lawyerid,
@@ -118,17 +119,20 @@ exports.getCasePartiesDao = async (caseId) => {
     cp.phone AS partyPhone,
     cp.district AS partyDistrict,
     cp.province AS partyProvince,
+    cp.partytype,
     cp.city AS partyCity,
+    cp.connectionstatus,
 
     -- Police Station Details (only when joined)
-    CASE WHEN cp.ispolicestation = 1 THEN ps.stationname END AS stationname,
-    CASE WHEN cp.ispolicestation = 1 THEN ps.phonenumber01 END AS policePhoneNo,
-    CASE WHEN cp.ispolicestation = 1 THEN ps.phonecode01 END AS policePhoneCode,
-    CASE WHEN cp.ispolicestation = 1 THEN ps.houseno END AS policeHouseNo,
-    CASE WHEN cp.ispolicestation = 1 THEN ps.streetname END AS policeStreetName,
-    CASE WHEN cp.ispolicestation = 1 THEN ps.city END AS policeCity,
-    CASE WHEN cp.ispolicestation = 1 THEN ps.district END AS policeDistrict,
-    CASE WHEN cp.ispolicestation = 1 THEN ps.province END AS policeProvince,
+    CASE WHEN cp.partytype = 'Organization' THEN o.id END AS oranizationid,
+    CASE WHEN cp.partytype = 'Organization' THEN o.name END AS oranizationname,
+    CASE WHEN cp.partytype = 'Organization' THEN o.registration_number END AS oranizationregno,
+    CASE WHEN cp.partytype = 'Organization' THEN o.email END AS oranizationemail,
+    CASE WHEN cp.partytype = 'Organization' THEN o.phone END AS oranizationphone,
+    CASE WHEN cp.partytype = 'Organization' THEN o.addresss END AS oranizationaddress,
+    CASE WHEN cp.partytype = 'Organization' THEN o.city END AS oranizationcity,
+    CASE WHEN cp.partytype = 'Organization' THEN o.district END AS oranizationdistrict,
+    CASE WHEN cp.partytype = 'Organization' THEN o.province END AS oranizationprovince,
 
     -- Lawyer Details (only when joined)
     CASE WHEN cp.lawyerstatus = 1 THEN l.lawyerfirstnameenglish END AS lawyerFirstName,
@@ -145,10 +149,11 @@ exports.getCasePartiesDao = async (caseId) => {
 
 FROM public.case_parties cp
 
-LEFT JOIN policestations ps 
-    ON cp.policestationid = ps.id
-    AND cp.ispolicestation = 1
-
+LEFT JOIN organizations o 
+    ON cp.organizationid = o.id
+    AND cp.partytype = 'Organization'
+    
+    
 LEFT JOIN legalprofessionals l 
     ON cp.lawyerid = l.id
     AND cp.lawyerstatus = 1
@@ -163,3 +168,156 @@ WHERE cp.caseid = $1
         throw err;
     }
 };
+
+
+exports.getPendingConnectionDetailsDao = async (page, limit, searchText, courtid) => {
+    const offset = (page - 1) * limit;
+  
+    let countSql = `
+      SELECT COUNT(*) AS total
+      FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id
+
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+    AND ou.linkeduserid IS NULL
+
+LEFT JOIN public.users u
+    ON u.nic = COALESCE(cp.partynic, ou.organizationusernic)
+
+WHERE 
+    c.courtid = $1
+    AND cp.linkeduserid IS null or ou.linkeduserid IS null
+    AND u.id IS NOT NULL 
+    `;
+  
+    let dataSql = `
+    SELECT 
+    c.casenumber,
+    c.casestatus,
+    c.casetype,
+    c.createdat,
+    cp.partyrole,
+    cp.id AS partyid,
+    c.id AS caseid,
+    u.id AS userid,
+    cp.partystatus,
+    cp.partynic,
+    cp.partyname,
+    cp.partytype,
+    ou.id as organizationuserid,
+    cp.organizationid,
+    o.name as organizationname,
+    ou.organizationusernic,
+    ou.organizationusername
+FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id
+
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+    AND ou.linkeduserid IS NULL
+
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+
+JOIN public.users u
+    ON u.nic = COALESCE(cp.partynic, ou.organizationusernic)
+
+WHERE 
+    c.courtid = $1
+    AND (cp.linkeduserid IS null or ou.linkeduserid IS null)
+    AND u.id IS NOT NULL 
+    `;
+  
+    const countParams = [courtid];
+    const dataParams = [courtid];
+  
+    if (searchText) {
+      const searchValue = `%${searchText}%`;
+  
+      countSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+      dataSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+  
+      countParams.push(searchValue, searchValue);
+      dataParams.push(searchValue, searchValue);
+    }
+  
+    // 📄 Pagination
+    const limitIndex = dataParams.length + 1;
+    const offsetIndex = dataParams.length + 2;
+  
+    dataSql += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    dataParams.push(limit, offset);
+  
+    try {
+      const countResult = await pool.query(countSql, countParams);
+      const dataResult = await pool.query(dataSql, dataParams);
+  
+      return {
+        items: dataResult.rows,
+        total: parseInt(countResult.rows[0].total, 10)
+        
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+
+
+
+exports.createConnectionDao = async (partyId, userId) => {
+    const sql = `
+      UPDATE case_parties 
+      SET linkeduserid = $2, connectionstatus = 'Connected'
+      WHERE id = $1
+      RETURNING *;
+    `;
+  
+    try {
+      const result = await pool.query(sql, [partyId, userId]);
+      return result.rows;
+    } catch (err) {
+      throw err;
+    }
+  };
+
+
+
+
+  exports.createConnectionOrgDao = async (orgUserId, userId) => {
+    const sql = `
+      update organization_users
+      set linkeduserid = $2
+      where id = $1
+      RETURNING *;
+    `;
+  
+    try {
+      const result = await pool.query(sql, [orgUserId, userId]);
+      return result.rows;
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  exports.updateConnectionStatusOrgDao  = async (partyId) => {
+    const sql = `
+    UPDATE case_parties 
+    SET connectionstatus = 'Connected'
+    WHERE id = $1
+    RETURNING *;
+    `;
+  
+    try {
+      const result = await pool.query(sql, [partyId]);
+      return result.rows;
+    } catch (err) {
+      throw err;
+    }
+  };

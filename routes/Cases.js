@@ -15,4 +15,19 @@ router.get('/get-selected-case/:caseId',
     CasesEP.getSelectedCaseEp
 );
 
+router.get('/get-pending-connections', 
+    authMiddleware,
+    CasesEP.getPendingConnectionDetailsEp
+);
+
+router.post('/create-connection', 
+    authMiddleware,
+    CasesEP.createConnectionEp
+);
+
+router.post('/create-connection-for-org', 
+    authMiddleware,
+    CasesEP.createConnectioOrgnEp
+);
+
 module.exports = router;
