@@ -21,7 +21,3 @@ exports.getAllConnectionDetailsSchema = Joi.object({
     limit: Joi.number().integer().min(1).max(100).default(10).optional(),
     searchText: Joi.string().allow('').optional(), 
 });
-
-exports.getPartyparmasIdSchema = Joi.object({
-    partyId: Joi.number().required()
-});

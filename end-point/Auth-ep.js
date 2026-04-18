@@ -39,12 +39,15 @@ exports.loginUser = async (req, res) => {
     }
 
     if (user) {
-      // verify_password = bcrypt.compareSync(password, user.password);
-      verify_password = (user.password === password);
-      console.log('password', verify_password)
-      if (!verify_password) {
-        return res.status(401).json({ error: "Wrong password." });
-      }
+      console.log('user.password', user.password, password);
+
+const verify_password = bcrypt.compareSync(password, user.password);
+
+console.log('password match:', verify_password);
+
+if (!verify_password) {
+  return res.status(401).json({ error: "Wrong password." });
+}
 
       if (verify_password) {
 

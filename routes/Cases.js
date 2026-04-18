@@ -30,4 +30,15 @@ router.post('/create-connection-for-org',
     CasesEP.createConnectioOrgnEp
 );
 
+router.get('/get-organization-party-details/:partyId', 
+    authMiddleware,
+    CasesEP.getOrganizationPartyUserDetailsEp
+);
+
+
+router.post('/create-case', 
+    authMiddleware,
+    CasesEP.getCaseEp
+);
+
 module.exports = router;

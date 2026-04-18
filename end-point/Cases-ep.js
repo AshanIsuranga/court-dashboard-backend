@@ -138,3 +138,56 @@ exports.createConnectioOrgnEp = async (req, res) => {
     });
   }
 };
+
+exports.getOrganizationPartyUserDetailsEp = async (req, res) => {
+    const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+    console.log('fullUrl', fullUrl)
+    try {
+        const { partyId } = await CaseValidation.getPartyparmasIdSchema.validateAsync(req.params);
+        const result = await CasesDAO.getOrganizationPartyUserDetailsDao(partyId)
+        if (result.length === 0) {
+            return res.json({ message: "no data found!", status: false });
+        }
+
+        res.status(200).json({ message: "Data found!", status: true, data: result });
+    } catch (error) {
+        if (error.isJoi) {
+            return res.status(400).json({ error: error.details[0].message });
+        }
+
+        console.error("Error fetching recived complaind:", error);
+        return res.status(500).json({ error: "An error occurred while fetching recived complaind" });
+    }
+}
+
+
+exports.getCaseEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl)
+  try {
+      const payload = req.body;
+      const courtId = req.user.courtId;
+      const userId = req.user.userId;
+      console.log('payload', payload)
+
+      
+
+      const createdCaseId = await CasesDAO.createCaseDao(caseDetails, userId, courtId);
+
+      if (!createdCaseId) {
+            return res.json({ message: "case creation failed!", status: false });
+      }
+
+
+      console.log('items', items)
+
+      res.status(200).json({ message: "Data found!", status: true, items, total });
+  } catch (error) {
+      if (error.isJoi) {
+          return res.status(400).json({ error: error.details[0].message });
+      }
+
+      console.error("Error fetching recived complaind:", error);
+      return res.status(500).json({ error: "An error occurred while fetching recived complaind" });
+  }
+}

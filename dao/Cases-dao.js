@@ -203,6 +203,10 @@ WHERE
     cp.id AS partyid,
     c.id AS caseid,
     u.id AS userid,
+    u.fullnameenglish AS userfullname,
+    u.phonenumber AS userphonenumber,
+    u.phonecode AS userphonecode,
+    u.nic AS usernic,
     cp.partystatus,
     cp.partynic,
     cp.partyname,
@@ -321,3 +325,63 @@ exports.createConnectionDao = async (partyId, userId) => {
       throw err;
     }
   };
+
+
+  exports.getOrganizationPartyUserDetailsDao = async (partyId) => {
+    const sql = `
+        SELECT 
+        cp.id,
+        ou.id AS organizationuserid,
+        ou.linkeduserid,
+        ou.organizationusernic,
+        ou.organizationusername,
+        ou.organizationuserdistrict AS district,
+        ou.organizationuserprovince AS province
+        FROM public.case_parties cp
+        LEFT JOIN public.organizations o ON cp.organizationid = o.id
+        LEFT JOIN organization_users ou ON o.id = ou.organization_id
+        WHERE cp.id = $1
+    `;
+
+    try {
+        const result = await pool.query(sql, [partyId]);
+        return result.rows;
+    } catch (err) {
+        throw err;
+    }
+};
+
+exports.createCaseDao = async (caseDetails, officerId, courtId) => {
+  const sql = `
+    INSERT INTO public.cases (
+      casenumber,
+      casetype,
+      descriptionEnglish,
+      descriptionSinhala,
+      descriptionTamil,
+      casestatus,
+      createofficerid,
+      courtid
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    RETURNING id;
+  `;
+
+  const values = [
+    caseDetails.casenumber,
+    caseDetails.casetype,
+    caseDetails.descriptionEnglish,
+    caseDetails.descriptionSinhala,
+    caseDetails.descriptionTamil,
+    caseDetails.casestatus,
+    officerId, 
+    courtId
+  ];
+
+  try {
+    const result = await pool.query(sql, values);
+    return result.rows[0].id; 
+  } catch (err) {
+    throw err;
+  }
+};
