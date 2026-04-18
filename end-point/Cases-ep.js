@@ -161,33 +161,71 @@ exports.getOrganizationPartyUserDetailsEp = async (req, res) => {
 }
 
 
-exports.getCaseEp = async (req, res) => {
+exports.createCaseEp = async (req, res) => {
   const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
-  console.log('fullUrl', fullUrl)
+  console.log('fullUrl', fullUrl);
+
   try {
-      const payload = req.body;
-      const courtId = req.user.courtId;
-      const userId = req.user.userId;
-      console.log('payload', payload)
+    const payload = req.body;
+    const courtId = req.user.courtId;
+    const userId = req.user.officerId;
+    console.log('payload', payload);
 
-      
+    const {
+      casenumber,
+      casetype,
+      descriptionEnglish,
+      descriptionSinhala,
+      descriptionTamil,
+      casestatus,
+      parties = [],
+    } = payload;
 
-      const createdCaseId = await CasesDAO.createCaseDao(caseDetails, userId, courtId);
+    const caseDetails = {
+      casenumber,
+      casetype,
+      descriptionEnglish,
+      descriptionSinhala,
+      descriptionTamil,
+      casestatus,
+    };
 
-      if (!createdCaseId) {
-            return res.json({ message: "case creation failed!", status: false });
+    // 1. Insert case
+    const createdCaseId = await CasesDAO.createCaseDao(caseDetails, userId, courtId);
+
+    if (!createdCaseId) {
+      return res.status(400).json({ message: "Case creation failed!", status: false });
+    }
+
+    // 2. Insert each party independently
+    for (const party of parties) {
+      if (party.partytype === 'Organization') {
+        const orgId = await CasesDAO.createOrganizationDao(party.organization);
+
+        if (party.organization?.organizationusers?.length) {
+          for (const orgUser of party.organization.organizationusers) {
+            await CasesDAO.createOrganizationUserDao(orgId, orgUser);
+          }
+        }
+
+        await CasesDAO.createCasePartyDao(createdCaseId, party, null, orgId);
+
+      } else if (party.partytype === 'Individual') {
+        await CasesDAO.createCasePartyDao(createdCaseId, party, null, null);
       }
+    }
 
+    return res.status(200).json({
+      message: "Case created successfully!",
+      status: true,
+      caseId: createdCaseId,
+    });
 
-      console.log('items', items)
-
-      res.status(200).json({ message: "Data found!", status: true, items, total });
   } catch (error) {
-      if (error.isJoi) {
-          return res.status(400).json({ error: error.details[0].message });
-      }
-
-      console.error("Error fetching recived complaind:", error);
-      return res.status(500).json({ error: "An error occurred while fetching recived complaind" });
+    if (error.isJoi) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+    console.error("Error creating case:", error);
+    return res.status(500).json({ error: "An error occurred while creating the case" });
   }
-}
+};

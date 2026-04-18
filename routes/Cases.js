@@ -38,7 +38,7 @@ router.get('/get-organization-party-details/:partyId',
 
 router.post('/create-case', 
     authMiddleware,
-    CasesEP.getCaseEp
+    CasesEP.createCaseEp
 );
 
 module.exports = router;

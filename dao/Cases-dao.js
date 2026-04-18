@@ -356,11 +356,11 @@ exports.createCaseDao = async (caseDetails, officerId, courtId) => {
     INSERT INTO public.cases (
       casenumber,
       casetype,
-      descriptionEnglish,
-      descriptionSinhala,
-      descriptionTamil,
+      "descriptionEnglish",
+      "descriptionSinhala",
+      "descriptionTamil",
       casestatus,
-      createofficerid,
+      createdofficerid,
       courtid
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -374,14 +374,104 @@ exports.createCaseDao = async (caseDetails, officerId, courtId) => {
     caseDetails.descriptionSinhala,
     caseDetails.descriptionTamil,
     caseDetails.casestatus,
-    officerId, 
-    courtId
+    officerId,
+    courtId,
   ];
 
-  try {
-    const result = await pool.query(sql, values);
-    return result.rows[0].id; 
-  } catch (err) {
-    throw err;
-  }
+  const result = await pool.query(sql, values);
+  return result.rows[0].id;
+};
+
+exports.createOrganizationDao = async (org) => {
+  const sql = `
+    INSERT INTO public.organizations (
+      name,
+      registration_number,
+      email,
+      phone,
+      addresss,
+      city,
+      district,
+      province
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    RETURNING id;
+  `;
+
+  const values = [
+    org.organizationname,
+    org.regno,
+    org.organizationemail,
+    org.organizationphone,
+    org.organizationaddress,
+    org.organizationcity,
+    org.organizationdistrict,
+    org.organizationprovince,
+  ];
+
+  const result = await pool.query(sql, values);
+  return result.rows[0].id;
+};
+
+exports.createOrganizationUserDao = async (organizationId, orgUser) => {
+  const sql = `
+    INSERT INTO public.organization_users (
+      organization_id,
+      organizationusernic,
+      organizationusername
+    )
+    VALUES ($1, $2, $3)
+    RETURNING id;
+  `;
+
+  const values = [
+    organizationId,
+    orgUser.nic,
+    orgUser.name,
+  ];
+
+  const result = await pool.query(sql, values);
+  return result.rows[0].id;
+};
+
+
+exports.createCasePartyDao = async (caseId, party, linkedUserId, organizationId) => {
+  const sql = `
+    INSERT INTO public.case_parties (
+      caseid,
+      linkeduserid,
+      partyrole,
+      partystatus,
+      partytype,
+      partynic,
+      partyname,
+      phone,
+      district,
+      province,
+      organizationid,
+      connectionstatus
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    RETURNING id;
+  `;
+
+  const isIndividual = party.partytype === 'Individual';
+
+  const values = [
+    caseId,
+    linkedUserId ?? null,
+    party.partyrole,
+    party.partystatus,
+    party.partytype,
+    isIndividual ? party.nic      : null,
+    isIndividual ? party.name     : null,
+    isIndividual ? party.phone    : null,
+    isIndividual ? party.district : null,
+    isIndividual ? party.province : null,
+    organizationId ?? null,
+    'Not Connected'
+  ];
+
+  const result = await pool.query(sql, values);
+  return result.rows[0].id;
 };
