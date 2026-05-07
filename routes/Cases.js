@@ -25,10 +25,21 @@ router.post('/create-connection',
     CasesEP.createConnectionEp
 );
 
+router.post('/reject-connection', 
+    authMiddleware,
+    CasesEP.rejectConnectionEp
+);
+
 router.post('/create-connection-for-org', 
     authMiddleware,
     CasesEP.createConnectioOrgnEp
 );
+
+router.post('/reject-connection-for-org', 
+    authMiddleware,
+    CasesEP.rejectConnectioOrgnEp
+);
+
 
 router.get('/get-organization-party-details/:partyId', 
     authMiddleware,

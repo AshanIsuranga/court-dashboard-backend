@@ -102,6 +102,36 @@ exports.createConnectionEp = async (req, res) => {
   }
 };
 
+exports.rejectConnectionEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl);
+
+  try {
+    const {  partyId, userId } = await CaseValidation.getConnectionSchema.validateAsync(req.body);
+
+    const result = await CasesDAO.rejectConnectionDao(partyId);
+
+    console.log('result', result)
+
+    if (result.length === 0) {
+      return res.json({ message: "connection creation failed!", status: false });
+   }
+
+    return res.status(200).json({
+      message: "Connection created!",
+      status: true,
+      data: result
+    });
+
+  } catch (error) {
+    console.error("Error creating connection:", error);
+    return res.status(500).json({
+      error: "An error occurred while creating connection"
+    });
+  }
+};
+
+
 
 exports.createConnectioOrgnEp = async (req, res) => {
   const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
@@ -123,6 +153,48 @@ exports.createConnectioOrgnEp = async (req, res) => {
    if (resul2.length === 0) {
     return res.json({ message: "connection creation failed!", status: false });
  }
+
+
+    return res.status(200).json({
+      message: "Connection created!",
+      status: true,
+      data: result
+    });
+
+  } catch (error) {
+    console.error("Error creating connection:", error);
+    return res.status(500).json({
+      error: "An error occurred while creating connection"
+    });
+  }
+};
+
+exports.rejectConnectioOrgnEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl);
+
+  try {
+    const {  partyId, userId, orgId, orgUserId } = await CaseValidation.getConnectionOrgSchema.validateAsync(req.body);
+
+    const result = await CasesDAO.rejectConnectionOrgDao(orgUserId);
+
+    console.log('result', result)
+
+    if (result.length === 0) {
+      return res.json({ message: "connection creation failed!", status: false });
+   }
+
+//    const partyConnectionStatus = await CasesDAO.rejectConnectionOrgDao(orgUserId);
+
+// let result2;
+
+// if (partyConnectionStatus?.orguserconnectionstatus === 'Rejected') {
+//   result2 = await CasesDAO.updateConnectionStatusOrgRejectDao(partyId);
+// }
+
+//    if (result2.length === 0) {
+//     return res.json({ message: "connection creation failed!", status: false });
+//  }
 
 
     return res.status(200).json({

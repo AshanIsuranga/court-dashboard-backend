@@ -218,12 +218,12 @@ WHERE
     ou.organizationusername
 FROM public.case_parties cp
 LEFT JOIN cases c 
-    ON cp.caseid = c.id
+    ON cp.caseid = c.id AND cp.connectionstatus != 'Rejected'
 
 LEFT JOIN organization_users ou
     ON cp.partytype = 'Organization'
     AND ou.organization_id = cp.organizationid
-    AND ou.linkeduserid IS NULL
+    AND ou.linkeduserid IS NULL AND (ou.orguserconnectionstatus IS NULL OR ou.orguserconnectionstatus != 'Rejected')
 
 LEFT JOIN organizations o
     ON cp.partytype = 'Organization'
@@ -272,9 +272,6 @@ WHERE
     }
   };
 
-
-
-
 exports.createConnectionDao = async (partyId, userId) => {
     const sql = `
       UPDATE case_parties 
@@ -289,31 +286,98 @@ exports.createConnectionDao = async (partyId, userId) => {
     } catch (err) {
       throw err;
     }
-  };
+};
 
+
+exports.rejectConnectionDao = async (partyId) => {
+  const sql = `
+    UPDATE case_parties 
+    SET 
+      connectionstatus = 'Rejected'
+    WHERE id = $1
+    RETURNING *;
+  `;
+
+  try {
+    const result = await pool.query(sql, [partyId]);
+    return result.rows;
+  } catch (err) {
+    throw err;
+  }
+};
 
 
 
   exports.createConnectionOrgDao = async (orgUserId, userId) => {
+  const sql = `
+    UPDATE organization_users
+    SET 
+      orguserconnectionstatus = 'Connected',
+      linkeduserid = $2
+    WHERE id = $1
+    RETURNING *;
+  `;
+
+  try {
+    const result = await pool.query(sql, [orgUserId, userId]);
+    return result.rows;
+  } catch (err) {
+    throw err;
+  }
+};
+
+exports.rejectConnectionOrgDao = async (orgUserId) => {
+  const sql = `
+    UPDATE organization_users
+    SET 
+      orguserconnectionstatus = 'Rejected'
+    WHERE id = $1
+    RETURNING *;
+  `;
+
+  try {
+    const result = await pool.query(sql, [orgUserId]);
+    return result.rows;
+  } catch (err) {
+    throw err;
+  }
+};
+
+  exports.updateConnectionStatusOrgDao  = async (partyId) => {
     const sql = `
-      update organization_users
-      set linkeduserid = $2
-      where id = $1
-      RETURNING *;
+    UPDATE case_parties 
+    SET connectionstatus = 'Connected'
+    WHERE id = $1
+    RETURNING *;
     `;
   
     try {
-      const result = await pool.query(sql, [orgUserId, userId]);
+      const result = await pool.query(sql, [partyId]);
       return result.rows;
     } catch (err) {
       throw err;
     }
   };
 
-  exports.updateConnectionStatusOrgDao  = async (partyId) => {
+  exports.getPartyConnectionStatusDao = async (partyId) => {
+  const sql = `
+    SELECT connectionstatus 
+    FROM case_parties 
+    WHERE id = $1
+  `;
+
+  try {
+    const result = await pool.query(sql, [partyId]);
+    return result.rows[0];
+  } catch (err) {
+    throw err;
+  }
+};
+
+  exports.updateConnectionStatusOrgRejectDao  = async (partyId) => {
     const sql = `
     UPDATE case_parties 
-    SET connectionstatus = 'Connected'
+    SET connectionstatus = 'Rejected'
     WHERE id = $1
     RETURNING *;
     `;

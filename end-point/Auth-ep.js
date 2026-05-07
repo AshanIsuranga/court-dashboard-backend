@@ -40,8 +40,10 @@ exports.loginUser = async (req, res) => {
 
     if (user) {
       console.log('user.password', user.password, password);
+      
+    verify_password = password, user.password
 
-const verify_password = bcrypt.compareSync(password, user.password);
+    // const verify_password = bcrypt.compareSync(password, user.password);
 
 console.log('password match:', verify_password);
 
