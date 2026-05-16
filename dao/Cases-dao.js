@@ -177,20 +177,25 @@ exports.getPendingConnectionDetailsDao = async (page, limit, searchText, courtid
       SELECT COUNT(*) AS total
       FROM public.case_parties cp
 LEFT JOIN cases c 
-    ON cp.caseid = c.id
+    ON cp.caseid = c.id 
 
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+    
 LEFT JOIN organization_users ou
     ON cp.partytype = 'Organization'
     AND ou.organization_id = cp.organizationid
-    AND ou.linkeduserid IS NULL
+    AND ou.linkeduserid IS null AND ou.orguserconnectionstatus = 'Pending'
 
-LEFT JOIN public.users u
+JOIN public.users u
     ON u.nic = COALESCE(cp.partynic, ou.organizationusernic)
 
 WHERE 
     c.courtid = $1
-    AND cp.linkeduserid IS null or ou.linkeduserid IS null
-    AND u.id IS NOT NULL 
+    AND cp.connectionstatus = 'Pending' AND u.id IS NOT NULL 
+        AND (cp.linkeduserid IS null or ou.linkeduserid IS null) 
+    	AND (cp.connectionstatus IS NULL or cp.connectionstatus = 'Pending')
     `;
   
     let dataSql = `
@@ -211,31 +216,35 @@ WHERE
     cp.partynic,
     cp.partyname,
     cp.partytype,
-    ou.id as organizationuserid,
     cp.organizationid,
+    cp.connectionstatus,
+    ou.id as organizationuserid,
     o.name as organizationname,
     ou.organizationusernic,
-    ou.organizationusername
+    ou.organizationusername,
+    
+    ou.orguserconnectionstatus
 FROM public.case_parties cp
 LEFT JOIN cases c 
-    ON cp.caseid = c.id AND cp.connectionstatus != 'Rejected'
-
-LEFT JOIN organization_users ou
-    ON cp.partytype = 'Organization'
-    AND ou.organization_id = cp.organizationid
-    AND ou.linkeduserid IS NULL AND (ou.orguserconnectionstatus IS NULL OR ou.orguserconnectionstatus != 'Rejected')
+    ON cp.caseid = c.id 
 
 LEFT JOIN organizations o
     ON cp.partytype = 'Organization'
     AND cp.organizationid = o.id
+    
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+    AND ou.linkeduserid IS null AND ou.orguserconnectionstatus = 'Pending'
 
 JOIN public.users u
     ON u.nic = COALESCE(cp.partynic, ou.organizationusernic)
 
 WHERE 
     c.courtid = $1
-    AND (cp.linkeduserid IS null or ou.linkeduserid IS null)
-    AND u.id IS NOT NULL 
+    AND cp.connectionstatus = 'Pending' AND u.id IS NOT NULL 
+        AND (cp.linkeduserid IS null or ou.linkeduserid IS null) 
+    	AND (cp.connectionstatus IS NULL or cp.connectionstatus = 'Pending')
     `;
   
     const countParams = [courtid];
