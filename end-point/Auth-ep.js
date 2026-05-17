@@ -40,10 +40,8 @@ exports.loginUser = async (req, res) => {
 
     if (user) {
       console.log('user.password', user.password, password);
-      
-    verify_password = password, user.password
 
-    // const verify_password = bcrypt.compareSync(password, user.password);
+      const verify_password = bcrypt.compareSync(password, user.password);
 
 console.log('password match:', verify_password);
 
@@ -119,4 +117,48 @@ if (!verify_password) {
     console.error("Error during login:", err);
     res.status(500).json({ error: "An error occurred during login." });
   }
+};
+
+
+exports.changePassword = async (req, res) => {
+    try {
+        const userId = req.user.officerId; // from JWT middleware
+        const { password } = req.body;
+
+        console.log('userId', req.user)
+
+        if (!password) {
+            return res.status(400).json({
+                status: false,
+                message: "Password is required"
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const result = await AuthDAO.changePasswordDao({
+            userId,
+            password: hashedPassword
+        });
+
+        if (!result) {
+            return res.status(400).json({
+                status: false,
+                message: "Password update failed"
+            });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Password updated successfully"
+        });
+
+    } catch (error) {
+        console.error("Change password error:", error);
+
+        return res.status(500).json({
+            status: false,
+            message: "Server error while changing password"
+        });
+    }
 };

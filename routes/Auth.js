@@ -9,4 +9,10 @@ router.post(
     AuthEP.loginUser
 );
 
+router.post(
+    "/change-passwords",
+    authMiddleware,
+    AuthEP.changePassword
+);
+
 module.exports = router;

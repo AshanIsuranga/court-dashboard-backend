@@ -212,13 +212,14 @@ exports.createRegistrarDao = async (data) => {
             city,
             district,
             province,
-            country
+            country,
+            approvalstatus
         )
         VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9,
             $10, $11, $12, $13,
-            $14, $15, $16, $17, $18, $19
+            $14, $15, $16, $17, $18, $19, $20
         )
         RETURNING *;
     `;
@@ -242,7 +243,8 @@ exports.createRegistrarDao = async (data) => {
         data.city,
         data.district,
         data.province,
-        data.country
+        data.country,
+        'APPROVED'
     ];
 
     try {
@@ -338,13 +340,14 @@ exports.createClerkDao = async (data) => {
             city,
             district,
             province,
-            country
+            country,
+            approvalstatus
         )
         VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9,
             $10, $11, $12, $13,
-            $14, $15, $16, $17, $18, $19
+            $14, $15, $16, $17, $18, $19, $20
         )
         RETURNING *;
     `;
@@ -368,12 +371,151 @@ exports.createClerkDao = async (data) => {
         data.city,
         data.district,
         data.province,
-        data.country
+        data.country,
+        'Approved'
     ];
 
     try {
         const result = await pool.query(sql, values);
         return result.rows[0]; // return inserted row
+    } catch (err) {
+        throw err;
+    }
+};
+
+exports.checkRegistrarDuplicatesDao = async ({ nic, email, phoneNumber01, phoneNumber02 }) => {
+    const sql = `
+        SELECT 
+            EXISTS (SELECT 1 FROM public.officers WHERE nic = $1) AS nic,
+            EXISTS (SELECT 1 FROM public.officers WHERE email = $2) AS email,
+            EXISTS (SELECT 1 FROM public.officers WHERE phonenumber01 = $3) AS "phoneNumber01",
+            EXISTS (SELECT 1 FROM public.officers WHERE phonenumber02 = $4) AS "phoneNumber02"
+    `;
+
+    const values = [nic, email, phoneNumber01, phoneNumber02];
+
+    try {
+        const result = await pool.query(sql, values);
+        return result.rows[0];
+    } catch (err) {
+        throw err;
+    }
+};
+
+exports.checkClerkDuplicatesDao = async ({ nic, email, phoneNumber01, phoneNumber02 }) => {
+    const sql = `
+        SELECT 
+            EXISTS (SELECT 1 FROM public.officers WHERE nic = $1) AS nic,
+            EXISTS (SELECT 1 FROM public.officers WHERE email = $2) AS email,
+            EXISTS (SELECT 1 FROM public.officers WHERE phonenumber01 = $3) AS "phoneNumber01",
+            EXISTS (SELECT 1 FROM public.officers WHERE phonenumber02 = $4) AS "phoneNumber02"
+    `;
+
+    const values = [nic, email, phoneNumber01, phoneNumber02];
+
+    try {
+        const result = await pool.query(sql, values);
+        return result.rows[0];
+    } catch (err) {
+        throw err;
+    }
+};
+
+exports.checkClerkDuplicatesExcludingSelfDao = async ({ id, nic, email, phonenumber01, phonenumber02 }) => {
+    const sql = `
+        SELECT
+            EXISTS (SELECT 1 FROM public.officers WHERE nic = $1 AND id != $5) AS nic,
+            EXISTS (SELECT 1 FROM public.officers WHERE email = $2 AND id != $5) AS email,
+            EXISTS (SELECT 1 FROM public.officers WHERE phonenumber01 = $3 AND id != $5) AS phonenumber01,
+            EXISTS (SELECT 1 FROM public.officers WHERE phonenumber02 = $4 AND id != $5) AS phonenumber02
+    `;
+
+    try {
+        const result = await pool.query(sql, [nic, email, phonenumber01, phonenumber02, id]);
+        return result.rows[0];
+    } catch (err) {
+        throw err;
+    }
+};
+
+exports.updateClerkDao = async (id, data) => {
+    const sql = `
+        UPDATE public.officers SET
+            firstname = $1,
+            lastname = $2,
+            officerrole = $3,
+            phonecode01 = $4,
+            phonenumber01 = $5,
+            phonecode02 = $6,
+            phonenumber02 = $7,
+            nic = $8,
+            email = $9,
+            housenumber = $10,
+            streetname = $11,
+            city = $12,
+            district = $13,
+            province = $14,
+            country = $15,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $16
+        RETURNING *;
+    `;
+
+    const values = [
+        data.firstname,
+        data.lastname,
+        data.officerrole,
+        data.phonecode01,
+        data.phonenumber01,
+        data.phonecode02,
+        data.phonenumber02,
+        data.nic,
+        data.email,
+        data.housenumber,
+        data.streetname,
+        data.city,
+        data.district,
+        data.province,
+        data.country,
+        id
+    ];
+
+    try {
+        const result = await pool.query(sql, values);
+        return result.rows[0] || null;
+    } catch (err) {
+        throw err;
+    }
+};
+
+exports.getClerkDetailsByIdDao = async (userId) => {
+    const sql = `
+        SELECT 
+            id,
+            firstname,
+            lastname,
+            officerrole,
+            officercode,
+            phonenumber01,
+            phonenumber02,
+            phonecode01,
+            phonecode02,
+            nic,
+            email,
+            courtid,
+            province,
+            district,
+            city,
+            streetname,
+            housenumber
+        FROM public.officers
+        WHERE id = $1
+        LIMIT 1
+    `;
+
+    try {
+        const result = await pool.query(sql, [userId]);
+        return result.rows[0];
     } catch (err) {
         throw err;
     }

@@ -37,5 +37,17 @@ router.post('/create-clerk',
     CoreEp.createClerk
 );
 
+router.get(
+  "/get-clerk-details-by-id/:id",
+    authMiddleware,
+    CoreEp.getClerkDetailsById
+);
+
+router.put(
+  "/update-clerk/:userId",
+    authMiddleware,
+    CoreEp.updateClerkDetails
+);
+
 
 module.exports = router;

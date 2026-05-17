@@ -29,3 +29,24 @@ exports.loginOfficerDao = async (userName) => {
     throw err;
   }
 };
+
+exports.changePasswordDao = async ({ userId, password }) => {
+    const sql = `
+        UPDATE public.officers
+        SET 
+            password = $1,
+            ispasswordchanged = 1,
+            updated_at = NOW()
+        WHERE id = $2
+        RETURNING id
+    `;
+
+    const values = [password, userId];
+
+    try {
+        const result = await pool.query(sql, values);
+        return result.rows[0];
+    } catch (err) {
+        throw err;
+    }
+};
