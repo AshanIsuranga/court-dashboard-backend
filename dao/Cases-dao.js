@@ -193,7 +193,7 @@ JOIN public.users u
 
 WHERE 
     c.courtid = $1
-    AND cp.connectionstatus = 'Pending' AND u.id IS NOT NULL 
+    AND ((cp.connectionstatus = 'Pending' AND cp.partytype = 'Individual') OR (ou.orguserconnectionstatus = 'Pending' AND cp.partytype = 'Organization')) AND u.id IS NOT NULL 
         AND (cp.linkeduserid IS null or ou.linkeduserid IS null) 
     	AND (cp.connectionstatus IS NULL or cp.connectionstatus = 'Pending')
     `;
@@ -317,35 +317,32 @@ exports.rejectConnectionDao = async (partyId) => {
 
 
 
-  exports.createConnectionOrgDao = async (orgUserId, userId) => {
+exports.createConnectionOrgDao = async (orgUserId, userId, partyId) => {
   const sql = `
-    UPDATE organization_users
-    SET 
-      orguserconnectionstatus = 'Connected',
-      linkeduserid = $2
-    WHERE id = $1
+    INSERT INTO public.org_user_party_connection
+      (org_user_id, linked_user_id, party_id, connection_status)
+    VALUES ($1, $2, $3, 'Connected')
     RETURNING *;
   `;
 
   try {
-    const result = await pool.query(sql, [orgUserId, userId]);
-    return result.rows;
+    const result = await pool.query(sql, [orgUserId, userId, partyId]);
+    return result.rows[0];
   } catch (err) {
     throw err;
   }
 };
 
-exports.rejectConnectionOrgDao = async (orgUserId) => {
+exports.rejectConnectionOrgDao = async (orgUserId, userId, partyId) => {
   const sql = `
-    UPDATE organization_users
-    SET 
-      orguserconnectionstatus = 'Rejected'
-    WHERE id = $1
+    INSERT INTO public.org_user_party_connection
+      (org_user_id, linked_user_id, party_id, connection_status)
+    VALUES ($1, $2, $3, 'Rejected')
     RETURNING *;
   `;
 
   try {
-    const result = await pool.query(sql, [orgUserId]);
+    const result = await pool.query(sql, [orgUserId, userId, partyId]);
     return result.rows;
   } catch (err) {
     throw err;
@@ -547,4 +544,802 @@ exports.createCasePartyDao = async (caseId, party, linkedUserId, organizationId)
 
   const result = await pool.query(sql, values);
   return result.rows[0].id;
+};
+
+  exports.getPendingConnectionDetailsIndividualDao = async (page, limit, searchText, courtid) => {
+    const offset = (page - 1) * limit;
+  
+    let countSql = `
+      SELECT COUNT(*) AS total
+FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+JOIN public.users u
+    ON u.nic = cp.partynic
+
+WHERE 
+    c.courtid = $1
+    AND cp.connectionstatus = 'Pending' 
+    AND u.id IS NOT NULL 
+        AND cp.linkeduserid is null
+    `;
+  
+    let dataSql = `
+    SELECT 
+    c.casenumber,
+    c.casestatus,
+    c.casetype,
+    c.createdat,
+    cp.partyrole,
+    cp.id AS partyid,
+    c.id AS caseid,
+    u.id AS userid,
+    u.fullnameenglish AS userfullname,
+    u.phonenumber AS userphonenumber,
+    u.phonecode AS userphonecode,
+    u.nic AS usernic,
+    cp.partystatus,
+    cp.partynic,
+    cp.partyname,
+    cp.partytype,
+    cp.connectionstatus
+    
+FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+JOIN public.users u
+    ON u.nic = cp.partynic
+
+WHERE 
+    c.courtid = $1
+    AND cp.connectionstatus = 'Pending' 
+    AND u.id IS NOT NULL 
+        AND cp.linkeduserid is null
+    `;
+  
+    const countParams = [courtid];
+    const dataParams = [courtid];
+  
+    if (searchText) {
+      const searchValue = `%${searchText}%`;
+  
+      countSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+      dataSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+  
+      countParams.push(searchValue, searchValue);
+      dataParams.push(searchValue, searchValue);
+    }
+  
+    // 📄 Pagination
+    const limitIndex = dataParams.length + 1;
+    const offsetIndex = dataParams.length + 2;
+  
+    dataSql += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    dataParams.push(limit, offset);
+  
+    try {
+      const countResult = await pool.query(countSql, countParams);
+      const dataResult = await pool.query(dataSql, dataParams);
+  
+      return {
+        indItems: dataResult.rows,
+        indTotal: parseInt(countResult.rows[0].total, 10)
+        
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+
+  exports.getPendingConnectionDetailsOrgDao = async (page, limit, searchText, courtid) => {
+    const offset = (page - 1) * limit;
+  
+    let countSql = `
+      SELECT COUNT(*) AS total
+      FROM public.case_parties cp
+
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+    
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+
+JOIN public.users u
+    ON u.nic = ou.organizationusernic
+
+LEFT JOIN public.org_user_party_connection oupc
+    ON cp.id = oupc.party_id
+    AND ou.id = oupc.org_user_id
+
+WHERE 
+    c.courtid = $1
+    AND u.id IS NOT NULL
+    -- AND cp.connectionstatus = 'Pending'
+
+    -- only get rows that DO NOT exist in org_user_party_connection
+    AND oupc.id IS NULL
+    `;
+  
+    let dataSql = `
+    SELECT 
+    c.casenumber,
+    c.casestatus,
+    c.casetype,
+    c.createdat,
+
+    cp.partyrole,
+    cp.id AS partyid,
+    c.id AS caseid,
+
+    u.id AS userid,
+    u.fullnameenglish AS userfullname,
+    u.phonenumber AS userphonenumber,
+    u.phonecode AS userphonecode,
+    u.nic AS usernic,
+
+    cp.partystatus,
+    cp.partynic,
+    cp.partyname,
+    cp.partytype,
+    cp.organizationid,
+    cp.connectionstatus,
+
+    ou.id AS organizationuserid,
+    o.name AS organizationname,
+    ou.organizationusernic,
+    ou.organizationusername,
+    ou.orguserconnectionstatus,
+    
+    oupc.id as oupcId,
+    oupc.linked_user_id
+
+FROM public.case_parties cp
+
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+    
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+
+JOIN public.users u
+    ON u.nic = ou.organizationusernic
+
+LEFT JOIN public.org_user_party_connection oupc
+    ON cp.id = oupc.party_id
+    AND ou.id = oupc.org_user_id
+
+WHERE 
+    c.courtid = $1
+    AND u.id IS NOT NULL
+    -- AND cp.connectionstatus = 'Pending'
+
+    -- only get rows that DO NOT exist in org_user_party_connection
+    AND oupc.id IS NULL
+    `;
+  
+    const countParams = [courtid];
+    const dataParams = [courtid];
+  
+    if (searchText) {
+      const searchValue = `%${searchText}%`;
+  
+      countSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+      dataSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+  
+      countParams.push(searchValue, searchValue);
+      dataParams.push(searchValue, searchValue);
+    }
+  
+    // 📄 Pagination
+    const limitIndex = dataParams.length + 1;
+    const offsetIndex = dataParams.length + 2;
+  
+    dataSql += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    dataParams.push(limit, offset);
+  
+    try {
+      const countResult = await pool.query(countSql, countParams);
+      const dataResult = await pool.query(dataSql, dataParams);
+  
+      return {
+        orgItems: dataResult.rows,
+        orgTotal: parseInt(countResult.rows[0].total, 10)
+        
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  exports.getApprovedConnectionDetailsIndividualDao = async (page, limit, searchText, courtid) => {
+    const offset = (page - 1) * limit;
+  
+    let countSql = `
+      SELECT COUNT(*) AS total
+FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+JOIN public.users u
+    ON u.nic = cp.partynic
+
+WHERE 
+    c.courtid = $1
+    AND cp.connectionstatus = 'Connected' 
+    AND u.id IS NOT NULL 
+        AND cp.linkeduserid is NOT null
+    `;
+  
+    let dataSql = `
+    SELECT 
+    c.casenumber,
+    c.casestatus,
+    c.casetype,
+    c.createdat,
+    cp.partyrole,
+    cp.id AS partyid,
+    c.id AS caseid,
+    u.id AS userid,
+    u.fullnameenglish AS userfullname,
+    u.phonenumber AS userphonenumber,
+    u.phonecode AS userphonecode,
+    u.nic AS usernic,
+    cp.partystatus,
+    cp.partynic,
+    cp.partyname,
+    cp.partytype,
+    cp.connectionstatus
+    
+FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+JOIN public.users u
+    ON u.nic = cp.partynic
+
+WHERE 
+    c.courtid = $1
+    AND cp.connectionstatus = 'Connected' 
+    AND u.id IS NOT NULL 
+        AND cp.linkeduserid is NOT null
+    `;
+  
+    const countParams = [courtid];
+    const dataParams = [courtid];
+  
+    if (searchText) {
+      const searchValue = `%${searchText}%`;
+  
+      countSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+      dataSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+  
+      countParams.push(searchValue, searchValue);
+      dataParams.push(searchValue, searchValue);
+    }
+  
+    // 📄 Pagination
+    const limitIndex = dataParams.length + 1;
+    const offsetIndex = dataParams.length + 2;
+  
+    dataSql += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    dataParams.push(limit, offset);
+  
+    try {
+      const countResult = await pool.query(countSql, countParams);
+      const dataResult = await pool.query(dataSql, dataParams);
+  
+      return {
+        indItems: dataResult.rows,
+        indTotal: parseInt(countResult.rows[0].total, 10)
+        
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  exports.getApprovedConnectionDetailsOrgDao = async (page, limit, searchText, courtid) => {
+    const offset = (page - 1) * limit;
+  
+    let countSql = `
+      SELECT COUNT(*) AS total
+      FROM public.case_parties cp
+
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+    
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+
+JOIN public.users u
+    ON u.nic = ou.organizationusernic
+
+LEFT JOIN public.org_user_party_connection oupc
+    ON cp.id = oupc.party_id
+    AND ou.id = oupc.org_user_id
+
+WHERE 
+    c.courtid = $1
+    AND u.id IS NOT NULL
+    AND cp.connectionstatus = 'Connected'
+
+    -- only get rows that DO NOT exist in org_user_party_connection
+    AND oupc.id IS Not NULL AND oupc.connection_status = 'Connected'
+    `;
+  
+    let dataSql = `
+    SELECT 
+    c.casenumber,
+    c.casestatus,
+    c.casetype,
+    c.createdat,
+
+    cp.partyrole,
+    cp.id AS partyid,
+    c.id AS caseid,
+
+    u.id AS userid,
+    u.fullnameenglish AS userfullname,
+    u.phonenumber AS userphonenumber,
+    u.phonecode AS userphonecode,
+    u.nic AS usernic,
+
+    cp.partystatus,
+    cp.partynic,
+    cp.partyname,
+    cp.partytype,
+    cp.organizationid,
+    cp.connectionstatus,
+
+    ou.id AS organizationuserid,
+    o.name AS organizationname,
+    ou.organizationusernic,
+    ou.organizationusername,
+    ou.orguserconnectionstatus,
+    
+    oupc.id as oupcId,
+    oupc.linked_user_id
+
+FROM public.case_parties cp
+
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+    
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+
+JOIN public.users u
+    ON u.nic = ou.organizationusernic
+
+LEFT JOIN public.org_user_party_connection oupc
+    ON cp.id = oupc.party_id
+    AND ou.id = oupc.org_user_id
+
+WHERE 
+    c.courtid = $1
+    AND u.id IS NOT NULL
+    AND cp.connectionstatus = 'Connected'
+
+    -- only get rows that DO NOT exist in org_user_party_connection
+    AND oupc.id IS NOT NULL AND oupc.connection_status = 'Connected'
+    `;
+  
+    const countParams = [courtid];
+    const dataParams = [courtid];
+  
+    if (searchText) {
+      const searchValue = `%${searchText}%`;
+  
+      countSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+      dataSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+  
+      countParams.push(searchValue, searchValue);
+      dataParams.push(searchValue, searchValue);
+    }
+  
+    // 📄 Pagination
+    const limitIndex = dataParams.length + 1;
+    const offsetIndex = dataParams.length + 2;
+  
+    dataSql += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    dataParams.push(limit, offset);
+  
+    try {
+      const countResult = await pool.query(countSql, countParams);
+      const dataResult = await pool.query(dataSql, dataParams);
+  
+      return {
+        orgItems: dataResult.rows,
+        orgTotal: parseInt(countResult.rows[0].total, 10)
+        
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  exports.getRejectedConnectionDetailsIndividualDao = async (page, limit, searchText, courtid) => {
+    const offset = (page - 1) * limit;
+  
+    let countSql = `
+      SELECT COUNT(*) AS total
+FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+JOIN public.users u
+    ON u.nic = cp.partynic
+
+WHERE 
+    c.courtid = $1
+    AND cp.connectionstatus = 'Rejected' 
+    AND u.id IS NOT NULL 
+        AND cp.linkeduserid is NOT null
+    `;
+  
+    let dataSql = `
+    SELECT 
+    c.casenumber,
+    c.casestatus,
+    c.casetype,
+    c.createdat,
+    cp.partyrole,
+    cp.id AS partyid,
+    c.id AS caseid,
+    u.id AS userid,
+    u.fullnameenglish AS userfullname,
+    u.phonenumber AS userphonenumber,
+    u.phonecode AS userphonecode,
+    u.nic AS usernic,
+    cp.partystatus,
+    cp.partynic,
+    cp.partyname,
+    cp.partytype,
+    cp.connectionstatus
+    
+FROM public.case_parties cp
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+JOIN public.users u
+    ON u.nic = cp.partynic
+
+WHERE 
+    c.courtid = $1
+    AND cp.connectionstatus = 'Rejected' 
+    AND u.id IS NOT NULL 
+        AND cp.linkeduserid is NOT null
+    `;
+  
+    const countParams = [courtid];
+    const dataParams = [courtid];
+  
+    if (searchText) {
+      const searchValue = `%${searchText}%`;
+  
+      countSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+      dataSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+  
+      countParams.push(searchValue, searchValue);
+      dataParams.push(searchValue, searchValue);
+    }
+  
+    // 📄 Pagination
+    const limitIndex = dataParams.length + 1;
+    const offsetIndex = dataParams.length + 2;
+  
+    dataSql += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    dataParams.push(limit, offset);
+  
+    try {
+      const countResult = await pool.query(countSql, countParams);
+      const dataResult = await pool.query(dataSql, dataParams);
+  
+      return {
+        indItems: dataResult.rows,
+        indTotal: parseInt(countResult.rows[0].total, 10)
+        
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  exports.getRejectedConnectionDetailsOrgDao = async (page, limit, searchText, courtid) => {
+    const offset = (page - 1) * limit;
+  
+    let countSql = `
+      SELECT COUNT(*) AS total
+      FROM public.case_parties cp
+
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+    
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+
+JOIN public.users u
+    ON u.nic = ou.organizationusernic
+
+LEFT JOIN public.org_user_party_connection oupc
+    ON cp.id = oupc.party_id
+    AND ou.id = oupc.org_user_id
+
+WHERE 
+    c.courtid = $1
+    AND u.id IS NOT NULL
+
+    -- only get rows that DO NOT exist in org_user_party_connection
+    AND oupc.id IS Not NULL AND oupc.connection_status = 'Rejected'
+    `;
+  
+    let dataSql = `
+    SELECT 
+    c.casenumber,
+    c.casestatus,
+    c.casetype,
+    c.createdat,
+
+    cp.partyrole,
+    cp.id AS partyid,
+    c.id AS caseid,
+
+    u.id AS userid,
+    u.fullnameenglish AS userfullname,
+    u.phonenumber AS userphonenumber,
+    u.phonecode AS userphonecode,
+    u.nic AS usernic,
+
+    cp.partystatus,
+    cp.partynic,
+    cp.partyname,
+    cp.partytype,
+    cp.organizationid,
+    cp.connectionstatus,
+
+    ou.id AS organizationuserid,
+    o.name AS organizationname,
+    ou.organizationusernic,
+    ou.organizationusername,
+    ou.orguserconnectionstatus,
+    
+    oupc.id as oupcId,
+    oupc.linked_user_id
+
+FROM public.case_parties cp
+
+LEFT JOIN cases c 
+    ON cp.caseid = c.id 
+
+LEFT JOIN organizations o
+    ON cp.partytype = 'Organization'
+    AND cp.organizationid = o.id
+    
+LEFT JOIN organization_users ou
+    ON cp.partytype = 'Organization'
+    AND ou.organization_id = cp.organizationid
+
+JOIN public.users u
+    ON u.nic = ou.organizationusernic
+
+LEFT JOIN public.org_user_party_connection oupc
+    ON cp.id = oupc.party_id
+    AND ou.id = oupc.org_user_id
+
+WHERE 
+    c.courtid = $1
+    AND u.id IS NOT NULL
+
+    -- only get rows that DO NOT exist in org_user_party_connection
+    AND oupc.id IS NOT NULL AND oupc.connection_status = 'Rejected'
+    `;
+  
+    const countParams = [courtid];
+    const dataParams = [courtid];
+  
+    if (searchText) {
+      const searchValue = `%${searchText}%`;
+  
+      countSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+      dataSql += ` AND (cp.partynic ILIKE $2 OR cp.partyname ILIKE $3)`;
+  
+      countParams.push(searchValue, searchValue);
+      dataParams.push(searchValue, searchValue);
+    }
+  
+    // 📄 Pagination
+    const limitIndex = dataParams.length + 1;
+    const offsetIndex = dataParams.length + 2;
+  
+    dataSql += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+    dataParams.push(limit, offset);
+  
+    try {
+      const countResult = await pool.query(countSql, countParams);
+      const dataResult = await pool.query(dataSql, dataParams);
+  
+      return {
+        orgItems: dataResult.rows,
+        orgTotal: parseInt(countResult.rows[0].total, 10)
+        
+      };
+    } catch (err) {
+      throw err;
+    }
+  };
+
+
+exports.getPendingLawyersDao = async (province, district, searchText, page, limit) => {
+  const offset = (page - 1) * limit;
+
+  let countSql = `
+    SELECT COUNT(*) AS total
+    FROM public.legalprofessionals l
+    left join courts c on l.nearestcourtid = c.id
+    WHERE l.approvestatus = 'Pending'
+  `;
+
+  let dataSql = `
+    SELECT l.*, c.courtnameenglish 
+    FROM public.legalprofessionals l
+    left join courts c on l.nearestcourtid = c.id
+    WHERE l.approvestatus = 'Pending'
+  `;
+
+  const countParams = [];
+  const dataParams = [];
+
+  // 🔍 Optional province filter
+  if (province) {
+    countParams.push(province);
+    dataParams.push(province);
+    countSql += ` AND l.province = $${countParams.length}`;
+    dataSql  += ` AND l.province = $${dataParams.length}`;
+  }
+
+  // 🔍 Optional district filter
+  if (district) {
+    countParams.push(district);
+    dataParams.push(district);
+    countSql += ` AND l.district = $${countParams.length}`;
+    dataSql  += ` AND l.district = $${dataParams.length}`;
+  }
+
+  // 🔍 Optional search filter
+  if (searchText) {
+    const searchValue = `%${searchText}%`;
+    countParams.push(searchValue);
+    dataParams.push(searchValue);
+    const idx = countParams.length; // same index for both since they're in sync
+
+    countSql += ` AND (l.nic ILIKE $${idx} OR l.lawyerfirstnameenglish ILIKE $${idx})`;
+    dataSql  += ` AND (l.nic ILIKE $${idx} OR l.lawyerfirstnameenglish ILIKE $${idx})`;
+  }
+
+  // 📄 Pagination (only on dataSql)
+  dataParams.push(limit, offset);
+  dataSql += ` LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`;
+
+  try {
+    const countResult = await pool.query(countSql, countParams);
+    const dataResult  = await pool.query(dataSql, dataParams);
+
+    return {
+      items: dataResult.rows,
+      totalItems: parseInt(countResult.rows[0].total, 10),
+    };
+  } catch (err) {
+    throw err;
+  }
+};
+
+exports.approveLawyerDao = async (id, status, adminId) => {
+    const sql = `
+     UPDATE public.legalprofessionals 
+     SET 
+       approvestatus = $2,
+       approvedby = $3,
+       approvedat = NOW()
+     WHERE id = $1
+     RETURNING *;
+   `;
+
+  try {
+    const result = await pool.query(sql, [id, status, adminId]);
+    return result.rows;
+  } catch (err) {
+    throw err;
+  }
+};
+
+exports.getApprovedLawyersDao = async (tab, province, district, searchText, page, limit) => {
+  const offset = (page - 1) * limit;
+
+  let countSql = `
+    SELECT COUNT(*) AS total
+    FROM public.legalprofessionals l
+    LEFT JOIN courts c ON l.nearestcourtid = c.id
+    WHERE l.approvestatus = $1
+  `;
+
+  let dataSql = `
+    SELECT l.*, c.courtnameenglish 
+    FROM public.legalprofessionals l
+    LEFT JOIN courts c ON l.nearestcourtid = c.id
+    WHERE l.approvestatus = $1
+  `;
+
+  const countParams = [tab];
+  const dataParams  = [tab];
+
+  // 🔍 Optional province filter
+  if (province) {
+    countParams.push(province);
+    dataParams.push(province);
+    countSql += ` AND l.province = $${countParams.length}`;
+    dataSql  += ` AND l.province = $${dataParams.length}`;
+  }
+
+  // 🔍 Optional district filter
+  if (district) {
+    countParams.push(district);
+    dataParams.push(district);
+    countSql += ` AND l.district = $${countParams.length}`;
+    dataSql  += ` AND l.district = $${dataParams.length}`;
+  }
+
+  // 🔍 Optional search filter
+  if (searchText) {
+    const searchValue = `%${searchText}%`;
+    countParams.push(searchValue);
+    dataParams.push(searchValue);
+    const idx = countParams.length;
+
+    countSql += ` AND (l.nic ILIKE $${idx} OR l.lawyerfirstnameenglish ILIKE $${idx})`;
+    dataSql  += ` AND (l.nic ILIKE $${idx} OR l.lawyerfirstnameenglish ILIKE $${idx})`;
+  }
+
+  // 📄 Pagination (only on dataSql)
+  dataParams.push(limit, offset);
+  dataSql += ` LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`;
+
+  try {
+    const countResult = await pool.query(countSql, countParams);
+    const dataResult  = await pool.query(dataSql, dataParams);
+
+    return {
+      items: dataResult.rows,
+      totalItems: parseInt(countResult.rows[0].total, 10),
+    };
+  } catch (err) {
+    throw err;
+  }
 };

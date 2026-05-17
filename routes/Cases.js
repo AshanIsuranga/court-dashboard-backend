@@ -52,4 +52,29 @@ router.post('/create-case',
     CasesEP.createCaseEp
 );
 
+router.get('/get-approved-connections', 
+    authMiddleware,
+    CasesEP.getApprovedConnectionDetailsEp
+);
+
+router.get('/get-rejected-connections', 
+    authMiddleware,
+    CasesEP.getRejectedConnectionDetailsEp
+);
+
+router.get('/get-pending-lawyers', 
+    authMiddleware,
+    CasesEP.getPendingLawyers
+);
+
+router.post('/approve-lawyer', 
+    authMiddleware,
+    CasesEP.approveLawyers
+);
+
+router.get('/get-approved-lawyers', 
+    authMiddleware,
+    CasesEP.getApprovedLawyers
+);
+
 module.exports = router;

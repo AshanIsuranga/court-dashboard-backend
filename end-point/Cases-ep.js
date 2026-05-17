@@ -57,11 +57,13 @@ exports.getPendingConnectionDetailsEp = async (req, res) => {
   try {
       const courtId = req.user.courtId;
       const {page, limit, searchText} = await CaseValidation.getAllConnectionDetailsSchema.validateAsync(req.query);
-      const {items, total} = await CasesDAO.getPendingConnectionDetailsDao(page, limit, searchText, courtId)
+      // const {items, total} = await CasesDAO.getPendingConnectionDetailsDao(page, limit, searchText, courtId)
+      const {indItems, indTotal} = await CasesDAO.getPendingConnectionDetailsIndividualDao(page, limit, searchText, courtId)
+      const {orgItems, orgTotal} = await CasesDAO.getPendingConnectionDetailsOrgDao(page, limit, searchText, courtId)
 
-      console.log('items', items)
+      console.log('indItems', indItems, 'orgItems', orgItems)
 
-      res.status(200).json({ message: "Data found!", status: true, items, total });
+      res.status(200).json({ message: "Data found!", status: true, indItems, indTotal, orgItems, orgTotal});
   } catch (error) {
       if (error.isJoi) {
           return res.status(400).json({ error: error.details[0].message });
@@ -140,7 +142,7 @@ exports.createConnectioOrgnEp = async (req, res) => {
   try {
     const {  partyId, userId, orgId, orgUserId } = await CaseValidation.getConnectionOrgSchema.validateAsync(req.body);
 
-    const result = await CasesDAO.createConnectionOrgDao(orgUserId, userId);
+    const result = await CasesDAO.createConnectionOrgDao(orgUserId, userId, partyId);
 
     console.log('result', result)
 
@@ -176,7 +178,7 @@ exports.rejectConnectioOrgnEp = async (req, res) => {
   try {
     const {  partyId, userId, orgId, orgUserId } = await CaseValidation.getConnectionOrgSchema.validateAsync(req.body);
 
-    const result = await CasesDAO.rejectConnectionOrgDao(orgUserId);
+    const result = await CasesDAO.rejectConnectionOrgDao(orgUserId, userId, partyId);
 
     console.log('result', result)
 
@@ -184,21 +186,24 @@ exports.rejectConnectioOrgnEp = async (req, res) => {
       return res.json({ message: "connection creation failed!", status: false });
    }
 
-//    const partyConnectionStatus = await CasesDAO.rejectConnectionOrgDao(orgUserId);
+//    const partyOrgUserConnectionStatus = await CasesDAO.rejectConnectionOrgDao(orgUserId);
 
-// let result2;
+let result2;
 
-// if (partyConnectionStatus?.orguserconnectionstatus === 'Rejected') {
-//   result2 = await CasesDAO.updateConnectionStatusOrgRejectDao(partyId);
-// }
+   const partyConnectionStatus = await CasesDAO.getPartyConnectionStatusDao(partyId);
 
-//    if (result2.length === 0) {
-//     return res.json({ message: "connection creation failed!", status: false });
-//  }
+   console.log('partyConnectionStatus', partyConnectionStatus.connectionstatus)
 
+if (partyConnectionStatus.connectionstatus !== 'Connected') {
+  result2 = await CasesDAO.updateConnectionStatusOrgRejectDao(partyId);
+
+  if (result2.length === 0) {
+    return res.json({ message: "connection creation failed!", status: false });
+ }
+}
 
     return res.status(200).json({
-      message: "Connection created!",
+      message: "Connection rejected!",
       status: true,
       data: result
     });
@@ -301,3 +306,135 @@ exports.createCaseEp = async (req, res) => {
     return res.status(500).json({ error: "An error occurred while creating the case" });
   }
 };
+
+exports.getApprovedConnectionDetailsEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl)
+  try {
+      const courtId = req.user.courtId;
+      const {page, limit, searchText} = await CaseValidation.getAllConnectionDetailsSchema.validateAsync(req.query);
+      const {indItems, indTotal} = await CasesDAO.getRejectedConnectionDetailsIndividualDao(page, limit, searchText, courtId)
+      const {orgItems, orgTotal} = await CasesDAO.getRejectedConnectionDetailsOrgDao(page, limit, searchText, courtId)
+
+      console.log('indItems', indItems)
+
+      res.status(200).json({ message: "Data found!", status: true, indItems, indTotal, orgItems, orgTotal });
+  } catch (error) {
+      if (error.isJoi) {
+          return res.status(400).json({ error: error.details[0].message });
+      }
+
+      console.error("Error fetching recived complaind:", error);
+      return res.status(500).json({ error: "An error occurred while fetching recived complaind" });
+  }
+}
+
+exports.getRejectedConnectionDetailsEp = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log('fullUrl', fullUrl)
+  try {
+      const courtId = req.user.courtId;
+      const {page, limit, searchText} = await CaseValidation.getAllConnectionDetailsSchema.validateAsync(req.query);
+      const {indItems, indTotal} = await CasesDAO.getRejectedConnectionDetailsIndividualDao(page, limit, searchText, courtId)
+      const {orgItems, orgTotal} = await CasesDAO.getRejectedConnectionDetailsOrgDao(page, limit, searchText, courtId)
+
+      console.log('indItems', indItems)
+
+      res.status(200).json({ message: "Data found!", status: true, indItems, indTotal, orgItems, orgTotal });
+  } catch (error) {
+      if (error.isJoi) {
+          return res.status(400).json({ error: error.details[0].message });
+      }
+
+      console.error("Error fetching recived complaind:", error);
+      return res.status(500).json({ error: "An error occurred while fetching recived complaind" });
+  }
+}
+
+exports.getPendingLawyers = async (req, res) => {
+    const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+    console.log('fullUrl', fullUrl)
+    try {
+      console.log('user', req.user);
+      const { province, district, searchText, page, limit } = req.query;
+      const { totalItems, items } = await CasesDAO.getPendingLawyersDao(
+        province,
+        district,
+        searchText,
+        parseInt(page),
+        parseInt(limit)
+      );
+
+      console.log('items', items)
+  
+      res.status(200).json({ items, totalItems });
+    } catch (error) {
+      console.error("Error retrieving center data:", error);
+      return res.status(500).json({ error: "An error occurred while fetching the company data" });
+    }
+  };
+
+exports.approveLawyers = async (req, res) => {
+  const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+  console.log("fullUrl", fullUrl);
+
+  try {
+    console.log('user', req.user)
+    const adminId = req.user?.adminId;
+    if (!adminId) {
+      return res.status(401).json({ error: "Unauthorized: missing admin user" });
+    }
+
+    // ✅ Validate request body
+    const { id, status } = await CaseValidation.getlawyerStatusSchema.validateAsync(req.body);
+
+    // ✅ Call DAO — it returns the updated row directly (not { result })
+    const updatedLawyer = await CasesDAO.approveLawyerDao(id, status, adminId);
+
+    // ✅ Handle "lawyer not found"
+    if (!updatedLawyer) {
+      return res.status(404).json({ error: "Lawyer not found" });
+    }
+
+    console.log("updatedLawyer", updatedLawyer);
+
+    return res.status(200).json({
+      message: `Lawyer ${status.toLowerCase()} successfully`,
+      status: true,
+      result: updatedLawyer,
+    });
+  } catch (error) {
+    console.error("Error approving lawyer:", error);
+
+    // ✅ Joi validation errors
+    if (error.isJoi) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+
+    return res.status(500).json({ error: "An error occurred while approving the lawyer" });
+  }
+};
+
+exports.getApprovedLawyers = async (req, res) => {
+    const fullUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+    console.log('fullUrl', fullUrl)
+    try {
+      console.log('user', req.user);
+      const { tab, province, district, searchText, page, limit } = req.query;
+      const { totalItems, items } = await CasesDAO.getApprovedLawyersDao(
+        tab,
+        province,
+        district,
+        searchText,
+        parseInt(page),
+        parseInt(limit)
+      );
+
+      console.log('items', items)
+  
+      res.status(200).json({ items, totalItems });
+    } catch (error) {
+      console.error("Error retrieving center data:", error);
+      return res.status(500).json({ error: "An error occurred while fetching the company data" });
+    }
+  };

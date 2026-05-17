@@ -25,3 +25,8 @@ exports.getAllConnectionDetailsSchema = Joi.object({
 exports.getPartyparmasIdSchema = Joi.object({
     partyId: Joi.number().required()
 });
+
+exports.getlawyerStatusSchema = Joi.object({
+    id: Joi.number().required(),
+    status: Joi.string().required(), 
+});
